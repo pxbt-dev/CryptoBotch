@@ -17,9 +17,11 @@ function App() {
   const [markets, setMarkets] = useState(DEFAULT_MARKETS)
   const [activeCharts, setActiveCharts] = useState(['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT'])
   const [focusedSymbol, setFocusedSymbol] = useState('BTCUSDT')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [orderBookHeight, setOrderBookHeight] = useState(50)
   const [searchInput, setSearchInput] = useState('')
+  const [availableSymbols, setAvailableSymbols] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const sidebarContentRef = useRef(null)
   const isResizing = useRef(false)
 
@@ -27,23 +29,31 @@ function App() {
     DEFAULT_MARKETS.forEach(m =>
       fetch(`/api/market/subscribe/${m.symbol}`, { method: 'POST' })
     )
+    fetch('/api/market/available-symbols')
+      .then(r => r.json())
+      .then(setAvailableSymbols)
+      .catch(() => {})
   }, [])
 
-  const addMarket = async () => {
-    const raw = searchInput.trim()
-    if (!raw) return
-    let symbol = raw.toUpperCase()
-    if (!symbol.endsWith('USDT')) symbol += 'USDT'
-    if (markets.find(m => m.symbol === symbol)) {
+  const suggestions = searchInput.length > 0
+    ? availableSymbols
+        .filter(s => s.includes(searchInput.toUpperCase()) && !markets.find(m => m.symbol === s))
+        .slice(0, 8)
+    : []
+
+  const addMarket = async (symbolOverride) => {
+    const symbol = (symbolOverride ?? searchInput.trim()).toUpperCase()
+    if (!symbol || markets.find(m => m.symbol === symbol)) {
       setSearchInput('')
+      setShowSuggestions(false)
       return
     }
     await fetch(`/api/market/subscribe/${symbol}`, { method: 'POST' })
-    const icon = symbol.replace('USDT', '')[0]
-    setMarkets(prev => [...prev, { symbol, icon }])
+    setMarkets(prev => [...prev, { symbol, icon: symbol[0] }])
     setActiveCharts(prev => [...prev, symbol])
     setFocusedSymbol(symbol)
     setSearchInput('')
+    setShowSuggestions(false)
   }
 
   const removeMarket = async (symbol) => {
@@ -80,7 +90,7 @@ function App() {
     return 'grid-cols-3 grid-rows-3'
   }
 
-  const startResizing = useCallback((e) => {
+  const startResizing = useCallback(() => {
     isResizing.current = true
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', stopResizing)
@@ -107,31 +117,53 @@ function App() {
   return (
     <div className="min-h-screen bg-background text-foreground flex font-mono selection:bg-white/10 overflow-hidden text-[11px]">
       {/* Sidebar */}
-      <aside className={`${sidebarOpen ? 'w-48' : 'w-12'} border-r border-border-dim flex flex-col bg-panel transition-all duration-200 z-30 group/sidebar`}>
+      <aside className={`${sidebarOpen ? 'w-48' : 'w-12'} border-r border-border-dim flex flex-col bg-panel transition-all duration-200 z-30`}>
         <div className="h-8 flex items-center justify-center border-b border-border-dim bg-background">
           <button onClick={() => setSidebarOpen(!sidebarOpen)} className="text-gray-500 hover:text-white transition-colors">
             <Menu size={16} />
           </button>
         </div>
 
-        {/* Add coin input — only visible when sidebar is open */}
+        {/* Search + autocomplete */}
         {sidebarOpen && (
-          <div className="flex items-center gap-1 px-2 py-2 border-b border-border-dim">
-            <input
-              type="text"
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addMarket()}
-              placeholder="BTC, TRUMP…"
-              className="flex-1 bg-transparent border border-white/10 rounded px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:outline-none focus:border-white/30 w-0"
-            />
-            <button
-              onClick={addMarket}
-              className="text-gray-500 hover:text-white transition-colors shrink-0"
-              title="Add coin"
-            >
-              <Plus size={14} />
-            </button>
+          <div className="px-2 py-2 border-b border-border-dim relative">
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                value={searchInput}
+                onChange={e => { setSearchInput(e.target.value); setShowSuggestions(true) }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') addMarket(suggestions[0] ?? searchInput.trim().toUpperCase())
+                  if (e.key === 'Escape') setShowSuggestions(false)
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="Search pairs…"
+                className="flex-1 bg-transparent border border-white/10 rounded px-2 py-1 text-[10px] text-white placeholder-gray-600 focus:outline-none focus:border-white/30 w-0"
+              />
+              <button
+                onClick={() => addMarket(suggestions[0] ?? searchInput.trim().toUpperCase())}
+                className="text-gray-500 hover:text-white transition-colors shrink-0"
+                title="Add pair"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+
+            {/* Autocomplete dropdown */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="absolute left-2 right-2 top-full mt-0.5 bg-[#0a0c10] border border-white/10 rounded-[2px] z-50 overflow-hidden shadow-xl">
+                {suggestions.map(s => (
+                  <button
+                    key={s}
+                    onMouseDown={() => addMarket(s)}
+                    className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:bg-white/5 hover:text-white transition-colors font-mono border-b border-white/[0.03] last:border-0"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

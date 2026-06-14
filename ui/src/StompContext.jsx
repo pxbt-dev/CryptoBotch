@@ -5,8 +5,10 @@ const StompContext = createContext(null)
 
 export function StompProvider({ children }) {
     const clientRef = useRef(null)
-    const activeSubsRef = useRef(new Map())  // topic -> stomp subscription
-    const pendingSubsRef = useRef(new Map()) // topic -> callback (queued before connect)
+    // topic -> { stompSub, callback } — stores both so we can re-subscribe on reconnect
+    const activeSubsRef = useRef(new Map())
+    // topic -> callback — queued while not yet connected
+    const pendingSubsRef = useRef(new Map())
 
     useEffect(() => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -16,8 +18,15 @@ export function StompProvider({ children }) {
             brokerURL,
             reconnectDelay: 2000,
             onConnect: () => {
+                // Re-subscribe active subs that were invalidated by a connection drop
+                activeSubsRef.current.forEach(({ callback }, topic) => {
+                    const stompSub = client.subscribe(topic, callback)
+                    activeSubsRef.current.set(topic, { stompSub, callback })
+                })
+                // Subscribe topics that were queued before first connect
                 pendingSubsRef.current.forEach((callback, topic) => {
-                    activeSubsRef.current.set(topic, client.subscribe(topic, callback))
+                    const stompSub = client.subscribe(topic, callback)
+                    activeSubsRef.current.set(topic, { stompSub, callback })
                 })
                 pendingSubsRef.current.clear()
             },
@@ -31,14 +40,15 @@ export function StompProvider({ children }) {
     const subscribe = useCallback((topic, callback) => {
         const client = clientRef.current
         if (client?.connected) {
-            activeSubsRef.current.set(topic, client.subscribe(topic, callback))
+            const stompSub = client.subscribe(topic, callback)
+            activeSubsRef.current.set(topic, { stompSub, callback })
         } else {
             pendingSubsRef.current.set(topic, callback)
         }
     }, [])
 
     const unsubscribe = useCallback((topic) => {
-        activeSubsRef.current.get(topic)?.unsubscribe()
+        activeSubsRef.current.get(topic)?.stompSub?.unsubscribe()
         activeSubsRef.current.delete(topic)
         pendingSubsRef.current.delete(topic)
     }, [])

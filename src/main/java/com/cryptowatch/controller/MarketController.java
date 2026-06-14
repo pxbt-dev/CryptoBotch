@@ -40,6 +40,11 @@ public class MarketController {
                 .map(indicatorService::calculateIndicators);
     }
 
+    @GetMapping("/available-symbols")
+    public Mono<List<String>> getAvailableSymbols() {
+        return binanceService.getAvailableSymbols();
+    }
+
     @PostMapping("/subscribe/{symbol}")
     public ResponseEntity<Void> subscribe(@PathVariable String symbol) {
         binanceWebSocketService.subscribe(symbol);

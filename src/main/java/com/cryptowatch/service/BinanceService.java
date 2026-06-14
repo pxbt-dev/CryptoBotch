@@ -2,9 +2,9 @@ package com.cryptowatch.service;
 
 import com.cryptowatch.dto.MarketDataDto;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
@@ -19,6 +19,19 @@ public class BinanceService {
 
     public BinanceService(WebClient.Builder webClientBuilder) {
         this.webClient = webClientBuilder.baseUrl("https://api.binance.com/api/v3").build();
+    }
+
+    public Mono<List<String>> getAvailableSymbols() {
+        return webClient.get()
+                .uri("/ticker/price")
+                .retrieve()
+                .bodyToMono(new ParameterizedTypeReference<List<Map<String, Object>>>() {})
+                .map(list -> list.stream()
+                        .map(item -> (String) item.get("symbol"))
+                        .sorted()
+                        .collect(java.util.stream.Collectors.toList()))
+                .doOnError(e -> log.error("Error fetching available symbols: {}", e.getMessage()))
+                .onErrorResume(e -> Mono.just(List.of()));
     }
 
     public Mono<List<MarketDataDto>> getHistoricalKlines(String symbol, String interval, int limit) {
