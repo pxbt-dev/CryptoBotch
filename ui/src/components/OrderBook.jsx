@@ -1,46 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
 import { Activity } from 'lucide-react';
+import { useStomp } from '../StompContext.jsx';
 
 const OrderBook = ({ symbol }) => {
     const [orders, setOrders] = useState({ bids: [], asks: [] });
+    const { subscribe, unsubscribe } = useStomp();
 
     useEffect(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const brokerURL = `${protocol}//${window.location.host}/ws-market`;
-        
-        console.log(`[OrderBook] Connecting to ${brokerURL} for ${symbol}`);
-        
-        const stompClient = new Client({
-            brokerURL,
-            onConnect: (frame) => {
-                console.log(`[OrderBook] Connected: ${frame.headers['user-name'] || 'anonymous'}`);
-                stompClient.subscribe(`/topic/orderbook/${symbol.toLowerCase()}`, (message) => {
-                    const data = JSON.parse(message.body);
-                    if (data && data.bids && data.asks) {
-                        setOrders({
-                            bids: data.bids.slice(0, 15),
-                            asks: data.asks.slice(0, 15)
-                        });
-                    }
-                });
-            },
-            onStompError: (frame) => {
-                console.error('[OrderBook] Broker reported error: ' + frame.headers['message']);
-                console.error('[OrderBook] Additional details: ' + frame.body);
-            },
-            onWebSocketClose: () => {
-                console.warn('[OrderBook] WebSocket connection closed');
+        setOrders({ bids: [], asks: [] });
+        const topic = `/topic/orderbook/${symbol.toLowerCase()}`;
+        subscribe(topic, (message) => {
+            const data = JSON.parse(message.body);
+            if (data?.bids && data?.asks) {
+                setOrders({ bids: data.bids.slice(0, 15), asks: data.asks.slice(0, 15) });
             }
         });
-        stompClient.activate();
-
-        return () => {
-            console.log(`[OrderBook] Deactivating for ${symbol}`);
-            stompClient.deactivate();
-        };
-    }, [symbol]);
+        return () => unsubscribe(topic);
+    }, [symbol, subscribe, unsubscribe]);
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -54,7 +30,6 @@ const OrderBook = ({ symbol }) => {
                     <span className="text-right">Size</span>
                     <span className="text-right">Sum</span>
                 </div>
-                {/* Asks */}
                 <div className="flex flex-col-reverse">
                     {orders.asks.map((ask, i) => (
                         <div key={`ask-${i}`} className="grid grid-cols-3 px-2 py-0.5 relative group hover:bg-bear/5 transition-colors cursor-pointer text-[9px]">
@@ -70,7 +45,6 @@ const OrderBook = ({ symbol }) => {
                         {parseFloat(orders.bids[0][0]).toFixed(2)}
                     </div>
                 )}
-                {/* Bids */}
                 <div className="flex flex-col">
                     {orders.bids.map((bid, i) => (
                         <div key={`bid-${i}`} className="grid grid-cols-3 px-2 py-0.5 relative group hover:bg-bull/5 transition-colors cursor-pointer text-[9px]">

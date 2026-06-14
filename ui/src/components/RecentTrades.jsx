@@ -1,40 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { Client } from '@stomp/stompjs';
-import SockJS from 'sockjs-client';
 import { TrendingUp } from 'lucide-react';
+import { useStomp } from '../StompContext.jsx';
 
 const RecentTrades = ({ symbol }) => {
     const [trades, setTrades] = useState([]);
+    const { subscribe, unsubscribe } = useStomp();
 
     useEffect(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const brokerURL = `${protocol}//${window.location.host}/ws-market`;
-        
-        console.log(`[RecentTrades] Connecting to ${brokerURL} for ${symbol}`);
-
-        const stompClient = new Client({
-            brokerURL,
-            onConnect: (frame) => {
-                console.log(`[RecentTrades] Connected: ${frame.headers['user-name'] || 'anonymous'}`);
-                stompClient.subscribe(`/topic/trades/${symbol.toLowerCase()}`, (message) => {
-                    const data = JSON.parse(message.body);
-                    setTrades(prev => [data, ...prev].slice(0, 30));
-                });
-            },
-            onStompError: (frame) => {
-                console.error('[RecentTrades] Broker reported error: ' + frame.headers['message']);
-            },
-            onWebSocketClose: () => {
-                console.warn('[RecentTrades] WebSocket connection closed');
-            }
+        setTrades([]);
+        const topic = `/topic/trades/${symbol.toLowerCase()}`;
+        subscribe(topic, (message) => {
+            const data = JSON.parse(message.body);
+            setTrades(prev => [data, ...prev].slice(0, 30));
         });
-        stompClient.activate();
-
-        return () => {
-            console.log(`[RecentTrades] Deactivating for ${symbol}`);
-            stompClient.deactivate();
-        };
-    }, [symbol]);
+        return () => unsubscribe(topic);
+    }, [symbol, subscribe, unsubscribe]);
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden">

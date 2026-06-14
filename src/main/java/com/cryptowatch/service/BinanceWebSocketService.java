@@ -14,11 +14,9 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.math.BigDecimal;
-import java.net.URI;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
@@ -27,27 +25,66 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final ObjectMapper objectMapper;
-    private final List<String> symbols = Arrays.asList("btcusdt", "ethusdt", "solusdt", "bnbusdt", "adausdt");
+    private final Set<String> activeSymbols = new CopyOnWriteArraySet<>();
+    private volatile WebSocketSession binanceSession;
+    private final AtomicInteger requestId = new AtomicInteger(1);
 
     @PostConstruct
     public void connect() {
         try {
             StandardWebSocketClient client = new StandardWebSocketClient();
-            String streams = symbols.stream()
-                    .flatMap(s -> Stream.of(s + "@kline_1m", s + "@depth20@100ms", s + "@trade"))
-                    .collect(Collectors.joining("/"));
-            
-            String url = "wss://stream.binance.com:9443/stream?streams=" + streams;
-            log.info("Connecting to Binance WebSocket: {}", url);
-            client.execute(this, url);
+            log.info("Connecting to Binance WebSocket");
+            client.execute(this, "wss://stream.binance.com:9443/stream");
         } catch (Exception e) {
             log.error("Failed to initiate Binance WebSocket connection: {}", e.getMessage());
         }
     }
 
+    public void subscribe(String symbol) {
+        String sym = symbol.toLowerCase();
+        if (activeSymbols.add(sym)) {
+            sendManagementMessage("SUBSCRIBE", sym);
+        }
+    }
+
+    public void unsubscribe(String symbol) {
+        String sym = symbol.toLowerCase();
+        if (activeSymbols.remove(sym)) {
+            sendManagementMessage("UNSUBSCRIBE", sym);
+        }
+    }
+
+    public Set<String> getActiveSymbols() {
+        return Collections.unmodifiableSet(activeSymbols);
+    }
+
+    private void sendManagementMessage(String method, String symbol) {
+        if (binanceSession == null || !binanceSession.isOpen()) {
+            log.warn("Binance session not open — will re-subscribe {} on reconnect", symbol);
+            return;
+        }
+        try {
+            List<String> params = List.of(
+                symbol + "@kline_1m",
+                symbol + "@depth20@100ms",
+                symbol + "@trade"
+            );
+            Map<String, Object> msg = new LinkedHashMap<>();
+            msg.put("method", method);
+            msg.put("params", params);
+            msg.put("id", requestId.getAndIncrement());
+            binanceSession.sendMessage(new TextMessage(objectMapper.writeValueAsString(msg)));
+            log.info("{} Binance streams for {}", method, symbol);
+        } catch (Exception e) {
+            log.error("Error sending {} to Binance: {}", method, e.getMessage());
+        }
+    }
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        log.info("Connected to Binance WebSocket successfully");
+        this.binanceSession = session;
+        log.info("Connected to Binance WebSocket");
+        activeSymbols.forEach(sym -> sendManagementMessage("SUBSCRIBE", sym));
     }
 
     @Override
@@ -57,7 +94,7 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, org.springframework.web.socket.CloseStatus status) {
-        log.warn("Binance WebSocket connection closed: {}. Reconnecting in 5s...", status);
+        log.warn("Binance WebSocket closed: {}. Reconnecting in 5s...", status);
         new Thread(() -> {
             try {
                 Thread.sleep(5000);
@@ -74,10 +111,6 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
             JsonNode root = objectMapper.readTree(message.getPayload());
             String stream = root.has("stream") ? root.get("stream").asText() : "";
             JsonNode node = root.has("data") ? root.get("data") : root;
-            
-            if (log.isTraceEnabled()) {
-                log.trace("Received message from stream: {}", stream);
-            }
 
             if (stream.contains("@kline")) {
                 handleKline(node);
@@ -104,24 +137,17 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
                     .price(new BigDecimal(k.get("c").asText()))
                     .volume(new BigDecimal(k.get("v").asText()))
                     .build();
-
             messagingTemplate.convertAndSend("/topic/market/" + symbol, dto);
         }
     }
 
     private void handleDepth(JsonNode node, String stream) {
         String symbol = stream.split("@")[0].toLowerCase();
-        if (log.isTraceEnabled()) {
-            log.trace("Broadcasting depth update for /topic/orderbook/{}", symbol);
-        }
         messagingTemplate.convertAndSend("/topic/orderbook/" + symbol, node);
     }
 
     private void handleTrade(JsonNode node) {
         String symbol = node.get("s").asText().toLowerCase();
-        if (log.isTraceEnabled()) {
-            log.trace("Broadcasting trade update for /topic/trades/{}", symbol);
-        }
         messagingTemplate.convertAndSend("/topic/trades/" + symbol, node);
     }
 }
