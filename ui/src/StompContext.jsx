@@ -5,10 +5,9 @@ const StompContext = createContext(null)
 
 export function StompProvider({ children }) {
     const clientRef = useRef(null)
-    // topic -> { stompSub, callback } — stores both so we can re-subscribe on reconnect
-    const activeSubsRef = useRef(new Map())
-    // topic -> callback — queued while not yet connected
-    const pendingSubsRef = useRef(new Map())
+    // Single authoritative registry: topic -> { callback, stompSub }
+    // stompSub is null when not yet connected or after a connection drop
+    const subsRef = useRef(new Map())
 
     useEffect(() => {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -18,39 +17,45 @@ export function StompProvider({ children }) {
             brokerURL,
             reconnectDelay: 2000,
             onConnect: () => {
-                // Re-subscribe active subs that were invalidated by a connection drop
-                activeSubsRef.current.forEach(({ callback }, topic) => {
-                    const stompSub = client.subscribe(topic, callback)
-                    activeSubsRef.current.set(topic, { stompSub, callback })
+                // Subscribe everything that doesn't have an active stompSub yet.
+                // Covers both the initial connect and reconnects after a drop.
+                subsRef.current.forEach((entry, topic) => {
+                    if (!entry.stompSub) {
+                        entry.stompSub = client.subscribe(topic, entry.callback)
+                    }
                 })
-                // Subscribe topics that were queued before first connect
-                pendingSubsRef.current.forEach((callback, topic) => {
-                    const stompSub = client.subscribe(topic, callback)
-                    activeSubsRef.current.set(topic, { stompSub, callback })
-                })
-                pendingSubsRef.current.clear()
+            },
+            onWebSocketClose: () => {
+                // Invalidate all stompSubs — the session is gone.
+                // onConnect will re-create them when the connection restores.
+                subsRef.current.forEach(entry => { entry.stompSub = null })
             },
         })
 
         client.activate()
         clientRef.current = client
-        return () => client.deactivate()
-    }, [])
-
-    const subscribe = useCallback((topic, callback) => {
-        const client = clientRef.current
-        if (client?.connected) {
-            const stompSub = client.subscribe(topic, callback)
-            activeSubsRef.current.set(topic, { stompSub, callback })
-        } else {
-            pendingSubsRef.current.set(topic, callback)
+        return () => {
+            subsRef.current.forEach(entry => { entry.stompSub = null })
+            client.deactivate()
         }
     }, [])
 
+    const subscribe = useCallback((topic, callback) => {
+        const entry = { callback, stompSub: null }
+        subsRef.current.set(topic, entry)
+        const client = clientRef.current
+        if (client?.connected) {
+            entry.stompSub = client.subscribe(topic, callback)
+        }
+        // If not connected, onConnect will pick it up when the connection is ready
+    }, [])
+
     const unsubscribe = useCallback((topic) => {
-        activeSubsRef.current.get(topic)?.stompSub?.unsubscribe()
-        activeSubsRef.current.delete(topic)
-        pendingSubsRef.current.delete(topic)
+        const entry = subsRef.current.get(topic)
+        if (entry) {
+            try { entry.stompSub?.unsubscribe() } catch (_) { /* session may already be closed */ }
+            subsRef.current.delete(topic)
+        }
     }, [])
 
     return (

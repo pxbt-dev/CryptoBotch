@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Slf4j
 @Service
@@ -28,6 +29,7 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
     private final Set<String> activeSymbols = new CopyOnWriteArraySet<>();
     private volatile WebSocketSession binanceSession;
     private final AtomicInteger requestId = new AtomicInteger(1);
+    private final ReentrantLock sendLock = new ReentrantLock();
 
     @PostConstruct
     public void connect() {
@@ -63,6 +65,7 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
             log.warn("Binance session not open — will re-subscribe {} on reconnect", symbol);
             return;
         }
+        sendLock.lock();
         try {
             List<String> params = List.of(
                 symbol + "@kline_1m",
@@ -77,6 +80,8 @@ public class BinanceWebSocketService extends TextWebSocketHandler {
             log.info("{} Binance streams for {}", method, symbol);
         } catch (Exception e) {
             log.error("Error sending {} to Binance: {}", method, e.getMessage());
+        } finally {
+            sendLock.unlock();
         }
     }
 
