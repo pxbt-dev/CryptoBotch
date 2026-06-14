@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: cryptowatch-two
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+server:
+  port: ${PORT:8080}
+
+logging:
+  level:
+    root: INFO
+    com.cryptowatch: DEBUG
