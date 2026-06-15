@@ -1,6 +1,6 @@
 # CryptoBotch
 
-A live cryptocurrency trading dashboard built on Binance WebSocket streams. Supports any Binance trading pair with real-time charts, order book, and recent trades.
+A live cryptocurrency trading dashboard built on Binance WebSocket streams. Supports any Binance trading pair with real-time charts, order book, and recent trades. Inspired by the late CryptoWatch (RIP).
 
 ## Stack
 
