@@ -4,6 +4,11 @@ spring:
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-cache: true
 
 server:
   port: ${PORT:8080}

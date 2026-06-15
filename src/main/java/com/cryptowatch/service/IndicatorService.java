@@ -63,7 +63,16 @@ public class IndicatorService {
             EMAIndicator macdSignal = new EMAIndicator(macdLine, 9);
 
             List<Map<String, Object>> indicatorsHistory = new ArrayList<>();
+            double cumulativeTPV = 0;
+            double cumulativeVol = 0;
             for (int i = 0; i < series.getBarCount(); i++) {
+                double typical = (series.getBar(i).getHighPrice().doubleValue()
+                        + series.getBar(i).getLowPrice().doubleValue()
+                        + series.getBar(i).getClosePrice().doubleValue()) / 3.0;
+                double vol = series.getBar(i).getVolume().doubleValue();
+                cumulativeTPV += typical * vol;
+                cumulativeVol += vol;
+
                 Map<String, Object> point = new HashMap<>();
                 point.put("timestamp", series.getBar(i).getEndTime().toInstant().toEpochMilli());
                 point.put("ema", ema.getValue(i).doubleValue());
@@ -79,6 +88,7 @@ public class IndicatorService {
                 point.put("macd", macd);
                 point.put("macdSignal", signal);
                 point.put("macdHist", macd - signal);
+                point.put("vwap", cumulativeVol > 0 ? cumulativeTPV / cumulativeVol : typical);
                 indicatorsHistory.add(point);
             }
 
