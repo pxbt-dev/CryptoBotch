@@ -230,7 +230,7 @@ function App() {
           </div>
         </header>
 
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-h-0">
           <div className={`flex-1 grid ${getGridClass()} gap-px bg-border-dim p-[1px] overflow-auto`}>
             {activeCharts.map(symbol => (
               <div
@@ -264,6 +264,23 @@ function App() {
             </div>
           </div>
         </div>
+
+        <footer className="h-7 shrink-0 flex items-center justify-center border-t border-border-dim bg-background/90">
+          <p className="text-[9px] font-mono m-0" style={{ color: '#8888aa' }}>
+            &copy; {new Date().getFullYear()}{' '}
+            <a
+              href="https://bornoutofcuriosity.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#00d9ff', textDecoration: 'none' }}
+              onMouseOver={e => e.target.style.textDecoration = 'underline'}
+              onMouseOut={e => e.target.style.textDecoration = 'none'}
+            >
+              bornoutofcuriosity.com
+            </a>
+            {' '}| All experiments are ongoing.
+          </p>
+        </footer>
       </main>
     </div>
   )
