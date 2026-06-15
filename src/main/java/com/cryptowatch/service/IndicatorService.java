@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.BaseBarSeriesBuilder;
 import org.ta4j.core.indicators.EMAIndicator;
+import org.ta4j.core.indicators.MACDIndicator;
 import org.ta4j.core.indicators.RSIIndicator;
 import org.ta4j.core.indicators.SMAIndicator;
 import org.ta4j.core.indicators.helpers.ClosePriceIndicator;
@@ -52,11 +53,14 @@ public class IndicatorService {
             SMAIndicator sma50 = new SMAIndicator(close, 50);
             SMAIndicator sma200 = new SMAIndicator(close, 200);
             RSIIndicator rsi = new RSIIndicator(close, 14);
-            
+
             StandardDeviationIndicator sd = new StandardDeviationIndicator(close, 20);
             BollingerBandsMiddleIndicator bbMiddle = new BollingerBandsMiddleIndicator(new EMAIndicator(close, 20));
             BollingerBandsUpperIndicator bbUpper = new BollingerBandsUpperIndicator(bbMiddle, sd);
             BollingerBandsLowerIndicator bbLower = new BollingerBandsLowerIndicator(bbMiddle, sd);
+
+            MACDIndicator macdLine = new MACDIndicator(close, 12, 26);
+            EMAIndicator macdSignal = new EMAIndicator(macdLine, 9);
 
             List<Map<String, Object>> indicatorsHistory = new ArrayList<>();
             for (int i = 0; i < series.getBarCount(); i++) {
@@ -70,6 +74,11 @@ public class IndicatorService {
                 point.put("bbUpper", bbUpper.getValue(i).doubleValue());
                 point.put("bbMiddle", bbMiddle.getValue(i).doubleValue());
                 point.put("bbLower", bbLower.getValue(i).doubleValue());
+                double macd = macdLine.getValue(i).doubleValue();
+                double signal = macdSignal.getValue(i).doubleValue();
+                point.put("macd", macd);
+                point.put("macdSignal", signal);
+                point.put("macdHist", macd - signal);
                 indicatorsHistory.add(point);
             }
 

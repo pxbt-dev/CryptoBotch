@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, LineStyle, CandlestickSeries, LineSeries, BarSeries } from 'lightweight-charts';
+import { createChart, ColorType, LineStyle, CandlestickSeries, LineSeries, BarSeries, HistogramSeries } from 'lightweight-charts';
 import { Activity, Search, X, ChevronDown } from 'lucide-react';
 import { useStomp } from '../StompContext.jsx';
 
@@ -24,7 +24,7 @@ const INDICATORS = [
     { id: 'AROON', label: 'AROON', category: 'Oscillator' },
     { id: 'ATR', label: 'ATR', category: 'Volatility' },
     { id: 'AO', label: 'Awesome Oscillator', category: 'Oscillator' },
-    { id: 'BB', label: 'Bollinger Bands', category: 'Overlay', color: '#444444', supported: true },
+    { id: 'BB', label: 'Bollinger Bands', category: 'Overlay', color: '#666666', supported: true },
     { id: 'BBR', label: 'Bollinger Bands %R', category: 'Overlay' },
     { id: 'BBW', label: 'Bollinger Bands Width', category: 'Overlay' },
     { id: 'CMF', label: 'CMF', category: 'Volume' },
@@ -48,12 +48,14 @@ const INDICATORS = [
     { id: 'KLTNR', label: 'KLTNR', category: 'Overlay' },
     { id: 'KST', label: 'KST', category: 'Oscillator' },
     { id: 'LINREG', label: 'Linear Regression', category: 'Trend' },
-    { id: 'MACD', label: 'MACD', category: 'Oscillator' },
+    { id: 'MACD', label: 'MACD', category: 'Oscillator', color: '#2196f3', supported: true },
     { id: 'MOM', label: 'MOM', category: 'Oscillator' },
     { id: 'MF', label: 'MF', category: 'Volume' },
     { id: 'MOON', label: 'Moon Phases', category: 'Misc' },
-    { id: 'SMA', label: 'MA Simple', category: 'Overlay', color: '#0088ff', supported: true },
-    { id: 'EMA', label: 'MA Exp', category: 'Overlay', color: '#ffffff', supported: true },
+    { id: 'SMA', label: 'MA Simple (20)', category: 'Overlay', color: '#0088ff', supported: true },
+    { id: 'SMA50', label: 'SMA 50', category: 'Overlay', color: '#ffcc00', supported: true },
+    { id: 'SMA200', label: 'SMA 200', category: 'Overlay', color: '#ff4400', supported: true },
+    { id: 'EMA', label: 'MA Exp (20)', category: 'Overlay', color: '#ffffff', supported: true },
     { id: 'WMA', label: 'MA Weighted', category: 'Overlay' },
     { id: 'OBV', label: 'OBV', category: 'Volume' },
     { id: 'PSAR', label: 'PSAR', category: 'Overlay' },
@@ -62,7 +64,7 @@ const INDICATORS = [
     { id: 'PRICE_OSC', label: 'Price Osc', category: 'Oscillator' },
     { id: 'PVT', label: 'Price Volume Trend', category: 'Volume' },
     { id: 'ROC', label: 'ROC', category: 'Oscillator' },
-    { id: 'RSI', label: 'RSI', category: 'Oscillator', supported: true },
+    { id: 'RSI', label: 'RSI (14)', category: 'Oscillator', color: '#7e57c2', supported: true },
     { id: 'VIGOR', label: 'Vigor Index', category: 'Oscillator' },
     { id: 'VOLATILITY', label: 'Volatility Index', category: 'Volatility' },
     { id: 'SMI_IND', label: 'SMI Ergodic Indicator', category: 'Oscillator' },
@@ -73,7 +75,7 @@ const INDICATORS = [
     { id: 'TRIX', label: 'Trix', category: 'Oscillator' },
     { id: 'ULTIMATE', label: 'Ultimate Osc', category: 'Oscillator' },
     { id: 'VSTOP', label: 'VSTOP', category: 'Overlay' },
-    { id: 'VOLUME', label: 'Volume', category: 'Volume' },
+    { id: 'VOLUME', label: 'Volume', category: 'Volume', color: 'rgba(120,180,255,0.6)', supported: true },
     { id: 'VWAP', label: 'VWAP', category: 'Overlay' },
     { id: 'VWMA', label: 'MA Volume Weighted', category: 'Overlay' },
     { id: 'WILLIAM_R', label: 'William R', category: 'Oscillator' },
@@ -109,8 +111,14 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
     const sma200Ref = useRef()
     const bbUpperRef = useRef()
     const bbLowerRef = useRef()
+    const rsiRef = useRef()
+    const macdRef = useRef()
+    const macdSignalRef = useRef()
+    const macdHistRef = useRef()
+    const volumeRef = useRef()
     const haStateRef = useRef({ open: 0, close: 0 })
     const chartTypeRef = useRef('candlestick')
+    const rafIdRef = useRef(null)
 
     const [searchTerm, setSearchTerm] = useState('')
     const [timeframe, setTimeframe] = useState('1m')
@@ -190,6 +198,46 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
                 bbUpperRef.current = chartInstance.addSeries(LineSeries, { color: '#444', lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false })
                 bbLowerRef.current = chartInstance.addSeries(LineSeries, { color: '#444', lineWidth: 1, lineStyle: LineStyle.Dashed, priceLineVisible: false })
             }
+
+            // Volume in main pane, pinned to bottom 20%
+            if (visibleIndicators.includes('VOLUME')) {
+                volumeRef.current = chartInstance.addSeries(HistogramSeries, {
+                    priceFormat: { type: 'volume' },
+                    priceScaleId: 'volume',
+                    priceLineVisible: false,
+                })
+                chartInstance.priceScale('volume').applyOptions({
+                    scaleMargins: { top: 0.8, bottom: 0 },
+                })
+            }
+
+            // RSI and MACD in sequential sub-panes
+            let nextPane = 1
+            if (visibleIndicators.includes('RSI')) {
+                const p = nextPane++
+                rsiRef.current = chartInstance.addSeries(LineSeries, {
+                    color: '#7e57c2', lineWidth: 1, title: 'RSI', priceLineVisible: false,
+                }, p)
+                rsiRef.current.createPriceLine({ price: 70, color: 'rgba(255,80,80,0.5)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
+                rsiRef.current.createPriceLine({ price: 50, color: 'rgba(255,255,255,0.1)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
+                rsiRef.current.createPriceLine({ price: 30, color: 'rgba(80,200,120,0.5)', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false })
+            }
+            if (visibleIndicators.includes('MACD')) {
+                const p = nextPane++
+                macdRef.current = chartInstance.addSeries(LineSeries, { color: '#2196f3', lineWidth: 1, title: 'MACD', priceLineVisible: false }, p)
+                macdSignalRef.current = chartInstance.addSeries(LineSeries, { color: '#ff9800', lineWidth: 1, title: 'Signal', priceLineVisible: false }, p)
+                macdHistRef.current = chartInstance.addSeries(HistogramSeries, { priceLineVisible: false }, p)
+                macdHistRef.current.createPriceLine({ price: 0, color: 'rgba(255,255,255,0.15)', lineWidth: 1, lineStyle: LineStyle.Solid, axisLabelVisible: false })
+            }
+
+            // Size sub-panes after a frame so they exist in the DOM
+            if (nextPane > 1) {
+                rafIdRef.current = requestAnimationFrame(() => {
+                    try {
+                        chartInstance.panes().slice(1).forEach(pane => pane.setHeight(80))
+                    } catch (_) {}
+                })
+            }
         } catch (e) {
             setError('CHART ENGINE ERROR')
             return
@@ -211,6 +259,7 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
                         time: d.timestamp / 1000,
                         open: Number(d.open), high: Number(d.high),
                         low: Number(d.low), close: Number(d.price),
+                        volume: Number(d.volume),
                     })).sort((a, b) => a.time - b.time)
 
                     if (seriesRef.current) {
@@ -227,6 +276,14 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
                             seriesRef.current.setData(candles)
                         }
                         setLatestValues(prev => ({ ...prev, price: candles[candles.length - 1]?.close }))
+                        if (volumeRef.current) {
+                            volumeRef.current.setData(candles.map(c => ({
+                                time: c.time,
+                                value: c.volume,
+                                color: c.close >= c.open ? 'rgba(0,200,100,0.3)' : 'rgba(255,60,60,0.3)',
+                            })))
+                            setLatestValues(prev => ({ ...prev, volume: candles[candles.length - 1]?.volume }))
+                        }
                     }
                 }
 
@@ -239,6 +296,14 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
                     if (sma200Ref.current) sma200Ref.current.setData(h.map(d => ({ time: d.timestamp / 1000, value: Number(d.sma200) })))
                     if (bbUpperRef.current) bbUpperRef.current.setData(h.map(d => ({ time: d.timestamp / 1000, value: Number(d.bbUpper) })))
                     if (bbLowerRef.current) bbLowerRef.current.setData(h.map(d => ({ time: d.timestamp / 1000, value: Number(d.bbLower) })))
+                    if (rsiRef.current) rsiRef.current.setData(h.map(d => ({ time: d.timestamp / 1000, value: Number(d.rsi) })))
+                    if (macdRef.current) macdRef.current.setData(h.map(d => ({ time: d.timestamp / 1000, value: Number(d.macd) })))
+                    if (macdSignalRef.current) macdSignalRef.current.setData(h.map(d => ({ time: d.timestamp / 1000, value: Number(d.macdSignal) })))
+                    if (macdHistRef.current) macdHistRef.current.setData(h.map(d => ({
+                        time: d.timestamp / 1000,
+                        value: Number(d.macdHist),
+                        color: Number(d.macdHist) >= 0 ? 'rgba(0,200,100,0.7)' : 'rgba(255,60,60,0.7)',
+                    })))
                 }
 
                 setStatus('LIVE')
@@ -260,6 +325,7 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
         resizeObserver.observe(chartContainerRef.current)
 
         return () => {
+            cancelAnimationFrame(rafIdRef.current)
             resizeObserver.disconnect()
             chartInstance?.remove()
         }
@@ -408,6 +474,10 @@ const TradingChart = ({ symbol, theme = 'default' }) => {
                         <span className="text-[7px] text-white/60 font-mono">
                             {ind.id === 'BB'
                                 ? `${latestValues.bbUpper?.toFixed(1)} / ${latestValues.bbLower?.toFixed(1)}`
+                                : ind.id === 'MACD'
+                                ? `${latestValues.macd?.toFixed(4)} / ${latestValues.macdSignal?.toFixed(4)}`
+                                : ind.id === 'VOLUME'
+                                ? (v => v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? (v/1e3).toFixed(2)+'K' : v?.toFixed(2))(latestValues.volume)
                                 : latestValues[ind.id.toLowerCase()]?.toFixed(2)}
                         </span>
                     </div>
