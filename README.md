@@ -1,4 +1,4 @@
-# CryptoBotch - a botched version of Cryptowatch
+# Cryptobotch - a botched version of Cryptowatch
 
 A live cryptocurrency trading dashboard built on Binance WebSocket streams. Supports any Binance trading pair with real-time charts, order book, and recent trades. Inspired by the late CryptoWatch (RIP).
 

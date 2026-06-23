@@ -208,11 +208,17 @@ function App() {
 
       {/* Main board */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        <div className="border-b border-border-dim px-3 py-1 bg-background/90 z-20">
+          <h1 className="text-sm sm:text-base font-bold tracking-tight text-white">
+            Cryptobotch
+            <span className="ml-2 text-[10px] sm:text-xs font-medium italic text-gray-500 tracking-normal">a botched version of Cryptowatch</span>
+          </h1>
+        </div>
         <header className="h-8 border-b border-border-dim flex items-center justify-between px-3 bg-background/90 z-20">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 bg-white text-black flex items-center justify-center font-black text-[10px]">C</div>
-              <span className="text-[9px] font-black tracking-[0.2em] text-white hidden sm:inline uppercase">CW / BOARD</span>
+              <span className="text-[9px] font-black tracking-[0.2em] text-white hidden sm:inline uppercase">CB / BOARD</span>
             </div>
             <div className="flex items-center gap-4 text-[9px] font-bold text-gray-600 uppercase tracking-widest">
               <span>Markets / {activeCharts.length}</span>
